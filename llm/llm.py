@@ -5,6 +5,7 @@ import time
 from openai.resources.chat import Chat
 from actions.action import Action
 from actions.action_call import ActionCall
+from llm.llm_response import LLMResponse
 
 class LLM:
 
@@ -22,8 +23,8 @@ class LLM:
         self.request_count = 0
         self.last_request_time = 0.0  # Time of the last request
 
-    def query(self, system_message : str, message : str, actions : list[Action] = [], chat_history : list [dict] = []) -> list[ActionCall]:
-        messages = LLM._package_messages(system_message, message, chat_history)
+    def query(self, system_message : str, actions : list[Action] = [], chat_history : list [dict] = []) -> LLMResponse:
+        messages = LLM._package_messages(system_message, chat_history)
         max_retries = 5
         for attempt in range(max_retries):
             try:
@@ -33,8 +34,7 @@ class LLM:
                     model=self._get_model_id(),
                     temperature=0,
                     top_p=0.95,
-                    tools=[action.get_definition() for action in actions],
-                    tool_choice="required"
+                    tools=[action.get_definition() for action in actions]
                 )
                 break
             except Exception as e:
@@ -57,14 +57,8 @@ class LLM:
                 tool_arguments = json.loads(tool.function.arguments)
 
                 tool_calls.append(ActionCall(tool_name, tool_arguments, tool))
-            return tool_calls
-        else:
-            # This case should ideally not happen with tool_choice="required"
-            # unless the model fundamentally fails or no tools are provided.
-            # Handle as an error or unexpected response.
-            print("Warning: LLM did not make a tool call despite tool_choice='required'.")
-            print(f"Raw LLM response content: {message_from_llm.content}")
-            raise Exception("LLM did not make a tool call as expected.")
+            return LLMResponse(action_calls=tool_calls)
+        return LLMResponse(message=message_from_llm.content)
     
     def exponential_backoff(attempt, max_delay=60):
         delay = min(2 ** attempt + random.random(), max_delay)
@@ -93,13 +87,6 @@ class LLM:
             }
         ]
         messages.extend(chat_history)
-        messages.append(
-            {
-                LLM.ROLE : LLM.ROLE_USER,
-                LLM.CONTENT : message
-            }
-        )
-        
         return messages
     
     def package_user(message : str) -> list[dict]:
@@ -110,16 +97,21 @@ class LLM:
             }
         ]
     
-    def package_tool_call(response : list[ActionCall]) -> list[dict]:
+    def package_response(message : str) -> list[dict]:
         return [
             {
                 LLM.ROLE : LLM.ROLE_ASSISTANT,
-                LLM.TOOL_CALLS : [action.get_raw_tool_call() for action in response]
+                LLM.CONTENT : message
             }
         ]
     
-    def package_tool_output(action_calls : list[ActionCall], responses : str) -> list[dict]:
-        history = []
+    def package_tool(action_calls : list[ActionCall], responses : list[str]) -> list[dict]:
+        history = [
+            {
+                LLM.ROLE : LLM.ROLE_ASSISTANT,
+                LLM.TOOL_CALLS : [action.get_raw_tool_call() for action in action_calls]
+            }
+        ]
         for i in range(len(action_calls)):
             actions_call = action_calls[i]
             response = responses[i]
