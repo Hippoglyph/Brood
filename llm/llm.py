@@ -79,7 +79,7 @@ class LLM:
         self.last_request_time = current_time
 
     @staticmethod
-    def _package_messages(system_message : str, message : str, chat_history : list [dict]) -> list[dict]:
+    def _package_messages(system_message : str, chat_history : list [dict]) -> list[dict]:
         messages = [
             {
                 LLM.ROLE : LLM.ROLE_SYSTEM,
@@ -121,6 +121,7 @@ class LLM:
                 LLM.TOOL_NAME : actions_call.get_name(),
                 LLM.CONTENT : response
             })
+        return history
     
     def _get_model_id(self) -> str:
         pass
